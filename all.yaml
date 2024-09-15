@@ -95,7 +95,6 @@ data:
 
     frontend myfrontend
       bind :8080
-      use_backend web1
       use_backend %[lua.select_backend]      
 
     backend web1
