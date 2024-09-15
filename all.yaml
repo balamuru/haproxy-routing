@@ -23,7 +23,7 @@ kind: Service
 metadata:
   name: webapp1
 spec:
-  type: NodePort
+  # type: NodePort
   selector:
     app: web1
   ports:
@@ -56,7 +56,7 @@ kind: Service
 metadata:
   name: webapp2
 spec:
-  type: NodePort
+  # type: NodePort
   selector:
     app: web2
   ports:
@@ -69,13 +69,13 @@ kind: ConfigMap
 metadata:
   name: haproxy-config
 data:
-  hello_world.lua: |
-    core.register_service("hello_world", "tcp", function(applet)
-      applet:send("s1")
+  simple_backend.lua: |
+    core.register_fetches("select_backend", function(txn)
+      return "web1"
     end)
   haproxy.cfg: |
     global
-      lua-load /etc/haproxy/hello_world.lua
+      lua-load /etc/haproxy/simple_backend.lua
       ## stats socket /var/run/api.sock user haproxy group haproxy mode 660 level admin expose-fd listeners
       log stdout format raw local0 info
 
@@ -95,10 +95,13 @@ data:
 
     frontend myfrontend
       bind :8080
-      default_backend webservers
+      use_backend web1
+      use_backend %[lua.select_backend]      
 
-    backend webservers
+    backend web1
       server s1 webapp1.default.svc.cluster.local:8080 check
+
+    backend web2
       server s2 webapp2.default.svc.cluster.local:8080 check
 ---
 apiVersion: apps/v1
