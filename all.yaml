@@ -64,18 +64,62 @@ spec:
     port: 8080
     targetPort: 8080
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: random-generator-deployment
+spec:
+  replicas: 1 
+  selector:
+    matchLabels:
+      app: random-generator
+  template:
+    metadata:
+      labels:
+        app: random-generator
+    spec:
+      containers:
+      - name: random-generator
+        image: k8spatterns/random-generator:latest 
+        ports:
+        - containerPort: 8080 
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: random-generator-service
+spec:
+  type: NodePort
+  selector:
+    app: random-generator 
+  ports:
+  - protocol: TCP
+    port: 8080 
+    targetPort: 8080 
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: haproxy-config
 data:
+  decision_backend.lua: |
+    core.register_fetches("select_backend_2", function(txn)
+    --  local httpclient = core.httpclient()
+    --  local api_base_url = "https://example.com/api/endpoint" 
+    --  local request_body = "" 
+    --  local response = httpclient:get{url = api_base_url, body=request_body}
+      return "web1"
+    end)
   simple_backend.lua: |
     core.register_fetches("select_backend", function(txn)
-      return "web1"
+      local backends = { "web1", "web2" }
+      local index = math.random(#backends)
+      return backends[index]
     end)
   haproxy.cfg: |
     global
       lua-load /etc/haproxy/simple_backend.lua
+      lua-load /etc/haproxy/decision_backend.lua
       ## stats socket /var/run/api.sock user haproxy group haproxy mode 660 level admin expose-fd listeners
       log stdout format raw local0 info
 
@@ -90,12 +134,18 @@ data:
     frontend stats
       bind *:8404
       stats enable
-      stats uri /
+      stats uri /stats
       stats refresh 10s
 
     frontend myfrontend
       bind :8080
-      use_backend %[lua.select_backend]      
+      # Simple function
+      use_backend %[lua.select_backend_2]   
+      
+      # Call remote REST endpoint
+      # http-request set-var(txn.backend_service) lua.choose_backend
+      # use-backend %[var(txn.backend_service)]         
+
 
     backend web1
       server s1 webapp1.default.svc.cluster.local:8080 check
